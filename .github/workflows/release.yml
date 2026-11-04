@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version.py matches the tag
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          FILE=$(python3 -c "import version; print(version.VERSION)")
+          echo "tag=$TAG version.py=$FILE"
+          [ "$TAG" = "$FILE" ] || { echo "::error::version.py ($FILE) does not match tag ($TAG)"; exit 1; }
+
+      - name: Syntax check
+        run: python3 -m py_compile app.py db.py importer.py woo.py updater.py version.py
+
+      - name: Build release zip
+        run: |
+          NAME=advankart-inventory-sync
+          mkdir -p dist/$NAME
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'dist' --exclude 'data' --exclude 'venv' ./ dist/$NAME/
+          cd dist && zip -qr "Advankart-Inventory-Sync-${GITHUB_REF_NAME}.zip" $NAME
+
+      - name: Release notes from CHANGELOG
+        run: |
+          awk -v t="## ${GITHUB_REF_NAME}" 'index($0,t)==1{f=1;next} /^## /{if(f)exit} f' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "Release ${GITHUB_REF_NAME}" > notes.md
+          cat notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Inventory Sync ${{ github.ref_name }}
+          body_path: notes.md
+          files: dist/Advankart-Inventory-Sync-${{ github.ref_name }}.zip

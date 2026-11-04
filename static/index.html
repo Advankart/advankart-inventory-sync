@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Advankart Inventory Sync</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%231f4e3d'/%3E%3Cpath d='M6 9l6-3 6 3v6l-6 3-6-3z' fill='none' stroke='%23e4c07a' stroke-width='1.8'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/></svg></div>
+    <div><div class="brand-name">Inventory Sync</div><div class="brand-sub" id="siteLabel">WooCommerce ⇄ BillBook</div></div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="inventory" class="active">Inventory</button>
+    <button data-tab="import">Import from BillBook</button>
+    <button data-tab="history">History</button>
+    <button data-tab="export">Export</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <div class="sync-box">
+    <div class="sync-meta"><span class="dot" id="syncDot"></span><span id="syncText">Not synced</span></div>
+    <button class="btn primary" id="syncBtn"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4"/></svg>Sync from website</button>
+  </div>
+</header>
+<div class="updbar hidden" id="updbar"><span id="updText"></span><button class="btn ghost" id="updNotes">What's new</button><button class="btn primary" id="updNow">Update now</button><button class="x" id="updHide" title="Later">✕</button></div>
+<div class="jobbar hidden" id="jobbar"><div class="spinner"></div><span id="jobText">Working…</span></div>
+
+<main>
+<!-- ================= INVENTORY ================= -->
+<section id="tab-inventory" class="tab active">
+  <div class="stats" id="stats"></div>
+  <div class="toolbar">
+    <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="q" placeholder="Search product name or SKU…" autocomplete="off"></div>
+    <select id="fStock">
+      <option value="">All stock</option><option value="instock">In stock</option><option value="low">Low stock</option>
+      <option value="outofstock">Out of stock</option><option value="onbackorder">On backorder</option>
+      <option value="untracked">Stock not tracked</option>
+    </select>
+    <select id="fOther">
+      <option value="">All products</option><option value="nosku">Missing SKU</option><option value="onsale">On sale</option>
+      <option value="variable">Variable only</option><option value="simple">Simple only</option><option value="draft">Not published</option>
+    </select>
+    <select id="fCat"><option value="">All categories</option></select>
+    <div class="spacer"></div>
+    <button class="btn ghost" id="expandAll">Expand all</button>
+    <button class="btn ghost" id="collapseAll">Collapse all</button>
+  </div>
+  <div class="hint">Tip: click any <b>price</b> or <b>stock</b> value to edit it directly on the website. Press Enter to save, Esc to cancel.</div>
+  <div class="table-wrap">
+    <table class="grid" id="invTable">
+      <thead><tr><th style="width:34px"></th><th style="width:56px">Image</th><th>Product / Variation</th><th>SKU</th>
+        <th class="r">Regular ₹</th><th class="r">Sale ₹</th><th class="r">Stock</th><th>Status</th><th></th></tr></thead>
+      <tbody id="invBody"></tbody>
+    </table>
+    <div class="empty hidden" id="invEmpty"></div>
+  </div>
+  <div class="pager" id="pager"></div>
+</section>
+
+<!-- ================= IMPORT ================= -->
+<section id="tab-import" class="tab">
+  <div class="steps"><div class="step active" data-s="1"><b>1</b>Choose file</div><div class="step" data-s="2"><b>2</b>Map columns</div>
+    <div class="step" data-s="3"><b>3</b>Review &amp; validate</div><div class="step" data-s="4"><b>4</b>Update &amp; verify</div></div>
+
+  <div class="card" id="imp1">
+    <label class="drop" id="drop">
+      <input type="file" id="fileIn" accept=".csv,.xlsx,.xlsm,.txt" hidden>
+      <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+      <div class="drop-title">Drop your BillBook export here or click to choose</div>
+      <div class="muted">CSV or Excel (.xlsx). Products are matched by SKU / Item code.</div>
+    </label>
+  </div>
+
+  <div class="card hidden" id="imp2">
+    <div class="card-head"><div><h3>Map columns</h3><div class="muted" id="fileInfo"></div></div>
+      <button class="btn ghost" data-reset>Choose another file</button></div>
+    <div class="mapgrid" id="mapGrid"></div>
+    <div class="price-note" id="priceNote"></div>
+    <h4>File preview</h4>
+    <div class="table-wrap small"><table class="grid compact" id="sampleTable"></table></div>
+    <div class="row-end">
+      <label class="check"><input type="checkbox" id="refreshFirst" checked> Refresh website data before comparing (recommended)</label>
+      <button class="btn primary" id="previewBtn">Compare &amp; validate</button>
+    </div>
+  </div>
+
+  <div class="card hidden" id="imp3">
+    <div class="card-head"><div><h3>Review changes</h3><div class="muted" id="pvInfo"></div></div>
+      <div class="btns"><button class="btn ghost" data-reset>Start over</button><button class="btn ghost" id="pvCsv">Download preview CSV</button></div></div>
+    <div class="stats small" id="pvStats"></div>
+    <div class="subtabs" id="pvTabs"></div>
+    <div class="table-wrap"><table class="grid" id="pvTable"></table></div>
+    <div class="applybar">
+      <div id="selInfo" class="muted"></div>
+      <button class="btn primary big" id="applyBtn">Update website</button>
+    </div>
+  </div>
+
+  <div class="card hidden" id="imp4">
+    <div id="resultBox"></div>
+  </div>
+</section>
+
+<!-- ================= HISTORY ================= -->
+<section id="tab-history" class="tab">
+  <div class="card"><div class="card-head"><h3>Update history</h3><button class="btn ghost" id="histRefresh">Refresh</button></div>
+    <div class="table-wrap"><table class="grid" id="histTable"></table></div></div>
+  <div class="card hidden" id="histDetail"></div>
+</section>
+
+<!-- ================= EXPORT ================= -->
+<section id="tab-export" class="tab">
+  <div class="card">
+    <h3>Export website stock</h3>
+    <p class="muted">Download the current website stock &amp; prices. Tick the box to pull the very latest data from WooCommerce first.</p>
+    <label class="check"><input type="checkbox" id="expSync" checked> Sync from website before export</label>
+    <div class="export-grid">
+      <div class="exp"><h4>Full stock report</h4><p class="muted">Every product with variations listed under their parent — regular, sale &amp; selling price, stock qty, status, categories.</p>
+        <div class="btns"><button class="btn primary" data-exp="full:xlsx">Excel (.xlsx)</button><button class="btn" data-exp="full:csv">CSV</button></div></div>
+      <div class="exp"><h4>BillBook format</h4><p class="muted">SKU, Item Name, Stock, Selling Price, MRP — handy to compare or reconcile in BillBook.</p>
+        <div class="btns"><button class="btn primary" data-exp="billbook:xlsx">Excel (.xlsx)</button><button class="btn" data-exp="billbook:csv">CSV</button></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SETTINGS ================= -->
+<section id="tab-settings" class="tab">
+  <div class="card">
+    <h3>WooCommerce connection</h3>
+    <div class="form">
+      <label>Website URL<input id="s_site_url" placeholder="https://saairaaorganics.com"></label>
+      <label>Consumer key<input id="s_consumer_key" placeholder="ck_…" autocomplete="off"></label>
+      <label>Consumer secret<input id="s_consumer_secret" type="password" placeholder="cs_…" autocomplete="off"></label>
+      <label>Authentication<select id="s_auth_mode"><option value="basic">Standard (header)</option><option value="query">Query string (if your host blocks headers)</option></select></label>
+      <label class="check"><input type="checkbox" id="s_verify_ssl"> Verify SSL certificate</label>
+      <label class="check"><input type="checkbox" id="s_include_drafts"> Include draft / private products</label>
+    </div>
+    <details class="help"><summary>How to get API keys</summary>
+      <ol><li>WordPress admin → <b>WooCommerce → Settings → Advanced → REST API</b>.</li>
+      <li>Click <b>Add key</b>, description "Inventory Sync", user = an Administrator, permissions <b>Read/Write</b>.</li>
+      <li>Copy the Consumer key and Consumer secret here (the secret is shown only once). You can also reuse the keys of your local orders app.</li></ol></details>
+  </div>
+  <div class="card">
+    <h3>Import rules</h3>
+    <div class="form">
+      <label>BillBook "Selling price" updates…
+        <select id="s_price_mode">
+          <option value="auto">Smart — the price customers pay (sale price if the item is on sale, else regular price)</option>
+          <option value="regular">Always the WooCommerce regular price</option>
+          <option value="sale">Always the WooCommerce sale price</option>
+        </select></label>
+      <label>Low-stock level (≤)<input id="s_low_stock" type="number" min="0"></label>
+      <label>Warn when price changes by ≥ (%)<input id="s_big_price_change_pct" type="number" min="1"></label>
+      <label>Warn when stock changes by ≥ (units)<input id="s_big_stock_change" type="number" min="1"></label>
+      <label>Auto-sync every (minutes, 0 = off)<input id="s_auto_sync_minutes" type="number" min="0"></label>
+    </div>
+  </div>
+  <div class="card">
+    <h3>About &amp; updates</h3>
+    <p class="muted" id="aboutText">Version …</p>
+    <div class="btns"><button class="btn" id="checkUpd">Check for updates</button><a class="btn ghost" id="relLink" target="_blank" href="#">Release history</a></div>
+  </div>
+  <div class="row-end"><button class="btn" id="testBtn">Test connection</button><button class="btn primary" id="saveBtn">Save settings</button></div>
+</section>
+</main>
+
+<div class="modal hidden" id="modal"><div class="modal-card"><div id="modalBody"></div><div class="modal-actions" id="modalActions"></div></div></div>
+<div class="toasts" id="toasts"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

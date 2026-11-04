@@ -170,16 +170,16 @@ function statusCell(i) {
   return h;
 }
 function rowHtml(i, isVar, hasKids, open) {
-  const name = isVar ? `${esc(i.variation_label)}` : `<a href="${esc(i.permalink)}" target="_blank">${esc(i.name)}</a>`;
+  const name = isVar ? `${esc(i.variation_label)}` : (EDIT_NAME ? `<span class="edit txt" data-id="${i.id}" data-f="name" data-v="${esc(i.name)}" title="Click to rename">${esc(i.name)}</span>` : esc(i.name));
   const sub = isVar ? "" : `<div class="sub">${esc(i.type)}${hasKids ? ` · ${(CHILDREN[i.id] || []).length} variations` : ""}${i.categories ? " · " + esc(i.categories) : ""}</div>`;
   return `<tr class="${isVar ? "var" : "par"}" data-row="${i.id}">
     <td>${hasKids ? `<button class="tog ${open ? "open" : ""}" data-tog="${i.id}">${ICON.chev}</button>` : ""}</td>
     <td><img class="thumb ${isVar ? "sm" : ""}" loading="lazy" src="${esc(i.image) || NOIMG}" onerror="this.src='${NOIMG}'"></td>
     <td><div class="pname">${name}</div>${sub}</td>
-    <td class="mono">${i.sku ? esc(i.sku) : (i.type === "variable" ? "" : '<span class="badge b-info">No SKU</span>')}</td>
+    <td class="mono">${EDIT_SKU ? `<span class="edit txt" data-id="${i.id}" data-f="sku" data-v="${esc(i.sku)}" title="Click to edit SKU">${i.sku ? esc(i.sku) : '<span class="badge b-info">Add SKU</span>'}</span>` : (i.sku ? esc(i.sku) : (i.type === "variable" ? "" : '<span class="badge b-info">No SKU</span>'))}</td>
     <td class="r">${priceCell(i, "regular_price")}</td><td class="r">${priceCell(i, "sale_price")}</td>
     <td class="r">${stockCell(i)}</td><td>${statusCell(i)}</td>
-    <td><a class="btn ghost" style="padding:4px 6px" title="Edit in WooCommerce" target="_blank" href="${adminLink(i)}">${ICON.ext}</a></td></tr>`;
+    <td><div class="acts"><a class="btn ghost" title="Open this product on your website" target="_blank" href="${esc(i.permalink)}">View</a><a class="btn ghost" title="Open in WooCommerce admin" target="_blank" href="${adminLink(i)}">Edit ${ICON.ext}</a></div></td></tr>`;
 }
 let SITE = "";
 function adminLink(i) { return `${SITE}/wp-admin/post.php?post=${i.parent_id || i.id}&action=edit`; }
@@ -216,7 +216,8 @@ $("#invBody").addEventListener("click", e => {
 function startEdit(el) {
   const id = +el.dataset.id, f = el.dataset.f, old = el.dataset.v;
   const orig = el.innerHTML;
-  el.innerHTML = `<input value="${esc(old)}" inputmode="decimal">`;
+  const isTxt = f === "name" || f === "sku";
+  el.innerHTML = `<input value="${esc(old)}" ${isTxt ? "" : 'inputmode="decimal"'}>`;
   const inp = el.querySelector("input"); inp.focus(); inp.select();
   let done = false;
   const cancel = () => { if (!done) { done = true; el.innerHTML = orig; } };
@@ -225,6 +226,7 @@ function startEdit(el) {
     if (ev.key === "Enter") {
       const val = inp.value.trim();
       if (val === String(old)) return cancel();
+      if (f === "sku" && !confirm(`Change SKU from "${old || "(none)"}" to "${val}"?\n\nRemember to use the same SKU / Item code in BillBook, otherwise imports will not match this item.`)) return cancel();
       done = true; el.innerHTML = '<span class="spinner" style="display:inline-block"></span>';
       try {
         const {job} = await api("/api/item/" + id, {method: "POST", body: {[f]: val}});
@@ -241,10 +243,23 @@ function startEdit(el) {
 
 /* ================= IMPORT ================= */
 let UP = null, PV = null, PVTAB = "update", SEL = new Set();
-function setStep(n) { $$(".step").forEach(s => { const k = +s.dataset.s; s.classList.toggle("active", k === n); s.classList.toggle("done", k < n); });
-  ["#imp1", "#imp2", "#imp3", "#imp4"].forEach((s, i) => $(s).classList.toggle("hidden", i + 1 !== n)); }
-$$("[data-reset]").forEach(b => b.onclick = resetImport);
-function resetImport() { UP = PV = null; $("#fileIn").value = ""; setStep(1); }
+let STEP = 1, APPLIED = false;
+function canGo(k) {
+  if (k === STEP) return false;
+  if (APPLIED) return k === 1;               // after an update only "start a new import" makes sense
+  if (k === 1) return true;
+  if (k === 2) return !!UP;
+  if (k === 3) return !!PV && STEP > 3;
+  return false;
+}
+function setStep(n) {
+  STEP = n;
+  $$(".step").forEach(s => { const k = +s.dataset.s; s.classList.toggle("active", k === n); s.classList.toggle("done", k < n); s.classList.toggle("can", canGo(k)); });
+  ["#imp1", "#imp2", "#imp3", "#imp4"].forEach((s, i) => $(s).classList.toggle("hidden", i + 1 !== n));
+}
+$$(".step").forEach(s => s.onclick = () => { const k = +s.dataset.s; if (!canGo(k)) return; if (k === 1) resetImport(); else setStep(k); });
+document.addEventListener("click", e => { const b = e.target.closest("[data-back]"); if (!b) return; const k = +b.dataset.back; if (k === 1) resetImport(); else setStep(k); });
+function resetImport() { UP = PV = null; APPLIED = false; $("#fileIn").value = ""; setStep(1); }
 const drop = $("#drop");
 ["dragover", "dragenter"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
 ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
@@ -260,24 +275,32 @@ async function uploadFile(file) {
   $$("#mapGrid select").forEach(s => s.onchange = () => { s.classList.toggle("set", !!s.value); priceNote(); });
   $("#sampleTable").innerHTML = `<thead><tr>${UP.headers.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>` +
     UP.sample.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("") + "</tbody>";
-  priceNote(); setStep(2);
+  PV = null; priceNote(); setStep(2);
 }
-let PRICE_MODE = "auto";
+["#doStock", "#doPrice"].forEach(s => $(s).addEventListener("change", priceNote));
+let PRICE_MODE = "regular", PROTECT = true, EDIT_NAME = false, EDIT_SKU = false;
 function priceNote() {
   const m = getMapping(); let t;
-  if (m.mrp && m.selling_price) t = "<b>MRP</b> will update the WooCommerce <b>regular price</b>; <b>Selling price</b> becomes the <b>sale price</b> when lower than MRP (sale removed when equal).";
-  else if (m.selling_price) t = {auto: "<b>Selling price</b> = the price customers pay. If the item is on sale on the website, its <b>sale price</b> is updated; otherwise the <b>regular price</b>.",
-    regular: "<b>Selling price</b> will update the WooCommerce <b>regular price</b>.", sale: "<b>Selling price</b> will update the WooCommerce <b>sale price</b>."}[PRICE_MODE] + ' <span class="muted">(change in Settings)</span>';
-  else t = "No price column mapped — only stock will be compared.";
-  if (!m.stock) t += " No stock column mapped — stock will not change.";
+  const doP = $("#doPrice").checked, doS = $("#doStock").checked;
+  const prot = PROTECT ? " Sale prices you set on the website are <b>kept</b>." : "";
+  if (!doP) t = "<b>Prices will not be touched</b> — only stock is compared.";
+  else if (m.mrp && m.selling_price) t = "<b>MRP</b> → WooCommerce <b>regular price</b>; <b>Selling price</b> → <b>sale price</b> when lower than MRP." + prot;
+  else if (m.mrp) t = "<b>MRP</b> → WooCommerce <b>regular price</b>." + prot;
+  else if (m.selling_price) t = {regular: "<b>Selling price</b> → WooCommerce <b>regular price</b>. If it already matches the website, nothing changes." + prot,
+    effective: "<b>Selling price</b> = the price customers pay: the sale price is updated if the item is on sale, otherwise the regular price." + prot,
+    sale: "<b>Selling price</b> → WooCommerce <b>sale price</b>."}[PRICE_MODE] + ' <span class="muted">(change in Settings)</span>';
+  else t = "No price column mapped — prices will not change.";
+  if (!doS) t += " <b>Stock will not be touched.</b>"; else if (!m.stock) t += " No stock column mapped — stock will not change.";
   $("#priceNote").innerHTML = t;
 }
 function getMapping() { const m = {}; $$("#mapGrid select").forEach(s => { if (s.value) m[s.dataset.map] = s.value; }); return m; }
 $("#previewBtn").onclick = async () => {
   const m = getMapping();
   if (!m.sku) return toast("Please choose the SKU / Item code column", "bad");
+  const doS = $("#doStock").checked, doP = $("#doPrice").checked;
+  if (!doS && !doP) return toast("Tick Stock and/or Prices to update", "bad");
   if ($("#refreshFirst").checked) { if (!(await syncNow(true))) return; }
-  try { PV = await api("/api/import/preview", {method: "POST", body: {upload_id: UP.upload_id, mapping: m}}); }
+  try { PV = await api("/api/import/preview", {method: "POST", body: {upload_id: UP.upload_id, mapping: m, apply_stock: doS, apply_price: doP}}); }
   catch (e) { return toast(e.message, "bad"); }
   SEL = new Set(PV.rows.filter(r => r.status === "update").map(r => r.rid));
   PVTAB = PV.summary.to_update ? "update" : (PV.summary.errors ? "error" : "unmatched");
@@ -346,13 +369,13 @@ $("#applyBtn").onclick = async () => {
     <p class="muted">Every change is checked against the website afterwards, and you can undo the whole update from History.</p>`,
     [["Cancel", "ghost", false], ["Yes, update website", "primary", true]]);
   if (!ok) return;
-  setStep(4); $("#resultBox").innerHTML = '<div class="result-hero"><div class="spinner" style="width:40px;height:40px"></div><div><h3>Updating website…</h3><div class="muted">Please keep this window open.</div></div></div>';
+  APPLIED = true; setStep(4); $("#resultBox").innerHTML = '<div class="result-hero"><div class="spinner" style="width:40px;height:40px"></div><div><h3>Updating website…</h3><div class="muted">Please keep this window open.</div></div></div>';
   try {
     const {job} = await api("/api/import/apply", {method: "POST", body: {upload_id: UP.upload_id, rids: [...SEL]}});
     const r = await runJob(job, "Updating website");
     showResult(r); loadItems(); refreshStatus();
   } catch (e) { $("#resultBox").innerHTML = `<div class="result-hero"><div class="ic bad">${ICON.bad}</div><div><h3>Update failed</h3><div>${esc(e.message)}</div></div></div><button class="btn" data-reset2>Back</button>`;
-    $("[data-reset2]").onclick = () => setStep(3); }
+    $("[data-reset2]").onclick = () => { APPLIED = false; setStep(3); }; }
 };
 function showResult(r) {
   const good = r.failed === 0;
@@ -388,7 +411,8 @@ async function openRun(id) {
     <div class="btns"><a class="btn" href="/api/runs/${r.id}/report.csv">Download report</a>${r.kind !== "rollback" ? `<button class="btn danger" id="undoBtn">Undo this run</button>` : ""}</div></div>
     <div class="table-wrap"><table class="grid"><thead><tr><th>SKU</th><th>Item</th><th class="r">Regular (before → after → website)</th><th class="r">Sale</th><th class="r">Stock</th><th>Result</th></tr></thead><tbody>
     ${r.items.map(it => { const a = it.after || {}; const cell = k => k in a ? `${v(it.before, k)} → <b>${a[k] === "" ? "—" : a[k]}</b> <span class="sub">(site: ${v(it.actual, k)})</span>` : '<span class="muted">—</span>';
-      return `<tr><td class="mono">${esc(it.sku)}</td><td>${esc(it.name)}${it.message ? `<div class="sub">${esc(it.message)}</div>` : ""}</td><td class="r">${cell("regular_price")}</td><td class="r">${cell("sale_price")}</td><td class="r">${cell("stock_quantity")}</td>
+      const txt = ["name", "sku"].filter(k => k in a).map(k => `<div class="sub">${k === "name" ? "Name" : "SKU"}: ${esc(v(it.before, k))} → <b>${esc(a[k] || "—")}</b></div>`).join("");
+      return `<tr><td class="mono">${esc(it.sku)}</td><td>${esc(it.name)}${txt}${it.message ? `<div class="sub">${esc(it.message)}</div>` : ""}</td><td class="r">${cell("regular_price")}</td><td class="r">${cell("sale_price")}</td><td class="r">${cell("stock_quantity")}</td>
       <td><span class="badge ${it.result === "verified" ? "b-ok" : it.result === "mismatch" ? "b-warn" : "b-bad"}">${esc(it.result)}</span></td></tr>`; }).join("")}</tbody></table></div>`;
   const u = $("#undoBtn"); if (u) u.onclick = () => rollback(id);
   D.scrollIntoView({behavior: "smooth"});
@@ -418,12 +442,16 @@ async function loadSettings() {
   const s = await api("/api/settings");
   SKEYS.forEach(k => { const el = $("#s_" + k); if (el) el.value = s[k] ?? ""; });
   $("#s_verify_ssl").checked = s.verify_ssl !== "0"; $("#s_include_drafts").checked = s.include_drafts !== "0";
-  PRICE_MODE = s.price_mode || "auto"; SITE = (s.site_url || "").replace(/\/$/, "");
+  if (!["regular", "effective", "sale"].includes(s.price_mode)) $("#s_price_mode").value = "regular";
+  ["protect_sale", "allow_edit_name", "allow_edit_sku"].forEach(k => $("#s_" + k).checked = s[k] === "1");
+  PROTECT = s.protect_sale !== "0"; EDIT_NAME = s.allow_edit_name === "1"; EDIT_SKU = s.allow_edit_sku === "1";
+  PRICE_MODE = $("#s_price_mode").value; SITE = (s.site_url || "").replace(/\/$/, "");
   return s;
 }
 function collectSettings() {
   const o = {}; SKEYS.forEach(k => o[k] = $("#s_" + k).value.trim());
-  o.verify_ssl = $("#s_verify_ssl").checked ? "1" : "0"; o.include_drafts = $("#s_include_drafts").checked ? "1" : "0"; return o;
+  o.verify_ssl = $("#s_verify_ssl").checked ? "1" : "0"; o.include_drafts = $("#s_include_drafts").checked ? "1" : "0";
+  ["protect_sale", "allow_edit_name", "allow_edit_sku"].forEach(k => o[k] = $("#s_" + k).checked ? "1" : "0"); return o;
 }
 $("#saveBtn").onclick = async () => { try { await api("/api/settings", {method: "POST", body: collectSettings()}); await loadSettings(); refreshStatus(); toast("Settings saved", "ok"); loadItems(); } catch (e) { toast(e.message, "bad"); } };
 $("#testBtn").onclick = async () => {

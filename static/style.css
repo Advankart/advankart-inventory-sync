@@ -144,3 +144,7 @@ a.btn{text-decoration:none}
 .updbar{display:flex;align-items:center;gap:10px;padding:8px 20px;background:#e8f2ec;color:var(--brand);font-weight:600;border-bottom:1px solid #cfe3d6;flex-wrap:wrap}
 .updbar #updText{flex:1}.updbar .x{border:0;background:none;cursor:pointer;color:var(--muted);font-size:16px}
 .notes{white-space:pre-wrap;max-height:50vh;overflow:auto;background:#f8faf9;border-radius:9px;padding:10px 12px;font-size:13px}
+.step.can{cursor:pointer}.step.can:hover{border-color:var(--brand2);color:var(--brand)}
+.what{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:9px}
+.edit.txt{text-align:left;min-width:0}.edit.txt input{width:min(360px,100%);text-align:left}
+.acts{display:flex;gap:4px;justify-content:flex-end}.acts .btn{padding:4px 8px;font-size:12px}

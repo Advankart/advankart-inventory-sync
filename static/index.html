@@ -49,7 +49,7 @@
     <button class="btn ghost" id="expandAll">Expand all</button>
     <button class="btn ghost" id="collapseAll">Collapse all</button>
   </div>
-  <div class="hint">Tip: click any <b>price</b> or <b>stock</b> value to edit it directly on the website. Press Enter to save, Esc to cancel.</div>
+  <div class="hint">Tip: click any <b>price</b> or <b>stock</b> value (and <b>name</b> / <b>SKU</b> if enabled in Settings → Editing) to edit it directly on the website. Press Enter to save, Esc to cancel.</div>
   <div class="table-wrap">
     <table class="grid" id="invTable">
       <thead><tr><th style="width:34px"></th><th style="width:56px">Image</th><th>Product / Variation</th><th>SKU</th>
@@ -77,8 +77,11 @@
 
   <div class="card hidden" id="imp2">
     <div class="card-head"><div><h3>Map columns</h3><div class="muted" id="fileInfo"></div></div>
-      <button class="btn ghost" data-reset>Choose another file</button></div>
+      <button class="btn ghost" data-back="1">← Back: choose another file</button></div>
     <div class="mapgrid" id="mapGrid"></div>
+    <div class="what"><b>What to update on the website:</b>
+      <label class="check"><input type="checkbox" id="doStock" checked> Stock</label>
+      <label class="check"><input type="checkbox" id="doPrice" checked> Prices</label></div>
     <div class="price-note" id="priceNote"></div>
     <h4>File preview</h4>
     <div class="table-wrap small"><table class="grid compact" id="sampleTable"></table></div>
@@ -90,7 +93,7 @@
 
   <div class="card hidden" id="imp3">
     <div class="card-head"><div><h3>Review changes</h3><div class="muted" id="pvInfo"></div></div>
-      <div class="btns"><button class="btn ghost" data-reset>Start over</button><button class="btn ghost" id="pvCsv">Download preview CSV</button></div></div>
+      <div class="btns"><button class="btn ghost" data-back="2">← Back: map columns</button><button class="btn ghost" id="pvCsv">Download preview CSV</button></div></div>
     <div class="stats small" id="pvStats"></div>
     <div class="subtabs" id="pvTabs"></div>
     <div class="table-wrap"><table class="grid" id="pvTable"></table></div>
@@ -149,14 +152,23 @@
     <div class="form">
       <label>BillBook "Selling price" updates…
         <select id="s_price_mode">
-          <option value="auto">Smart — the price customers pay (sale price if the item is on sale, else regular price)</option>
-          <option value="regular">Always the WooCommerce regular price</option>
+          <option value="regular">WooCommerce regular price (recommended — website sale prices are kept)</option>
+          <option value="effective">The price customers pay (sale price if on sale, else regular)</option>
           <option value="sale">Always the WooCommerce sale price</option>
         </select></label>
+      <label class="check"><input type="checkbox" id="s_protect_sale"> Protect website sale prices — an import never removes or changes a sale price you set in WooCommerce unless the file clearly asks for it</label>
       <label>Low-stock level (≤)<input id="s_low_stock" type="number" min="0"></label>
       <label>Warn when price changes by ≥ (%)<input id="s_big_price_change_pct" type="number" min="1"></label>
       <label>Warn when stock changes by ≥ (units)<input id="s_big_stock_change" type="number" min="1"></label>
       <label>Auto-sync every (minutes, 0 = off)<input id="s_auto_sync_minutes" type="number" min="0"></label>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Editing</h3>
+    <p class="muted">Allow changing these directly from the Inventory table. Changes go live on the website immediately, are verified, and can be undone from History.</p>
+    <div class="form">
+      <label class="check"><input type="checkbox" id="s_allow_edit_name"> Allow editing product name</label>
+      <label class="check"><input type="checkbox" id="s_allow_edit_sku"> Allow editing SKU <span class="muted">&nbsp;(SKU must match BillBook's Item code for imports)</span></label>
     </div>
   </div>
   <div class="card">

@@ -39,10 +39,12 @@ Leave the small black window open (it is minimised) while you use the app.
 6. If something went wrong, go to **History** and use **Undo this run** to put the old values back. The undo is also verified.
 
 ### How "Selling price" is applied
-- **Smart (default):** the price customers pay. If the item is on sale on the website, its sale price changes.
-  If it isn't, its regular price changes. If the new selling price is at or above the regular price, the regular price is updated and the sale is removed.
-- If you also map an **MRP** column, MRP sets the regular price and the selling price sets the sale price.
-- You can make it always regular or always sale under **Settings → Import rules**.
+- **Default:** BillBook's selling price updates the WooCommerce **regular price**. If it already matches, nothing changes.
+  A sale price you set on the website is **kept**. For example, a product at ₹300 regular with a ₹240 website sale and ₹300 in BillBook: only the stock is updated, and the ₹240 sale stays.
+- If a new regular price would not be above the website sale price, the price is **not changed** and the row is flagged so you can fix the sale price in WooCommerce. Stock still updates.
+- If you also map an **MRP** column, MRP sets the regular price and a lower selling price sets the sale price.
+- On the Map columns step you can untick **Prices** or **Stock** to update only one of them.
+- Under **Settings → Import rules** you can switch to "the price customers pay" or "always sale price", or turn off sale-price protection.
 
 Variable (parent) products have no price of their own, so update each variation's SKU.
 

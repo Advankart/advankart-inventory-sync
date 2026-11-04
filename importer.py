@@ -264,32 +264,63 @@ def build_preview(headers, rows, mapping, items, settings):
             cur_reg = _num(it["regular_price"])
             cur_sale = _num(it["sale_price"])
             new_reg, new_sale = cur_reg, cur_sale
+            protect = settings.get("protect_sale", "1") == "1"
+            P = fmt_price
+
+            def skip_price(msg):
+                nonlocal new_reg, new_sale
+                new_reg, new_sale = cur_reg, cur_sale
+                warnings.append("Price not changed: " + msg)
+
             if mrp is not None:
+                # MRP column -> regular price; selling price -> sale price when lower than MRP
                 new_reg = mrp
-                if sp is not None:
-                    new_sale = sp if sp < mrp - 0.004 else None
-                    if sp > mrp + 0.004:
-                        warnings.append(f"Selling price {fmt_price(sp)} is above MRP {fmt_price(mrp)} — regular price "
-                                        f"set to MRP and sale price removed.")
-                elif cur_sale is not None and cur_sale >= mrp:
-                    new_sale = None
-                    warnings.append("Existing sale price is not below the new MRP — sale price removed.")
+                if sp is not None and sp < mrp - 0.004:
+                    new_sale = sp
+                elif sp is not None and sp > mrp + 0.004:
+                    skip_price(f"selling price ₹{P(sp)} is higher than MRP ₹{P(mrp)} in BillBook.")
+                elif cur_sale is not None:
+                    if cur_sale < mrp - 0.004 and protect:
+                        pass  # website-only sale kept
+                    elif cur_sale >= mrp - 0.004:
+                        if protect:
+                            skip_price(f"website sale price ₹{P(cur_sale)} would not be lower than the new "
+                                       f"regular price ₹{P(mrp)}. Fix the sale price in WooCommerce first.")
+                        else:
+                            new_sale = None
+                            warnings.append("Sale price removed (it was not lower than the new MRP).")
+                    elif sp is not None:
+                        new_sale = None  # BillBook price equals MRP -> no discount
             elif sp is not None:
-                mode = price_mode
-                if mode == "auto":
-                    mode = "sale" if cur_sale is not None else "regular"
-                if mode == "regular":
+                mode = price_mode if price_mode in ("regular", "effective", "sale") else "regular"
+                if _same(sp, cur_reg) or (mode != "sale" and _same(sp, cur_sale)):
+                    pass  # BillBook price already matches the website — nothing to change
+                elif mode == "regular":
                     new_reg = sp
-                    if cur_sale is not None and cur_sale >= sp:
-                        new_sale = None
-                        warnings.append("Existing sale price is not below the new price — sale price removed.")
+                    if cur_sale is not None and cur_sale >= sp - 0.004:
+                        if protect:
+                            skip_price(f"website sale price ₹{P(cur_sale)} would not be lower than the new "
+                                       f"regular price ₹{P(sp)}. Fix the sale price in WooCommerce first.")
+                        else:
+                            new_sale = None
+                            warnings.append("Sale price removed (it was not lower than the new regular price).")
+                elif mode == "effective":
+                    if cur_sale is None:
+                        new_reg = sp
+                    elif cur_reg is not None and sp < cur_reg - 0.004:
+                        new_sale = sp
+                    elif protect:
+                        skip_price(f"item is on sale (₹{P(cur_sale)}) and ₹{P(sp)} is not below its regular "
+                                   f"price ₹{P(cur_reg)}.")
+                    else:
+                        new_reg, new_sale = sp, None
+                        warnings.append("Regular price updated and sale price removed.")
                 else:  # sale
                     if cur_reg is not None and sp < cur_reg - 0.004:
                         new_sale = sp
                     else:
-                        new_reg, new_sale = sp, None
-                        warnings.append(f"Selling price {fmt_price(sp)} is not below the regular price "
-                                        f"{fmt_price(cur_reg)} — regular price updated and sale price removed.")
+                        skip_price(f"₹{P(sp)} is not below the regular price ₹{P(cur_reg)}, so it cannot be "
+                                   f"a sale price.")
             if not _same(new_reg, cur_reg):
                 after["regular_price"] = fmt_price(new_reg)
             if not _same(new_sale, cur_sale):

@@ -72,7 +72,10 @@ DEFAULT_SETTINGS = {
     "consumer_secret": "",
     "auth_mode": "basic",            # basic | query
     "verify_ssl": "1",
-    "price_mode": "auto",            # auto | regular | sale
+    "price_mode": "regular",         # regular | effective | sale  (legacy 'auto' == regular)
+    "protect_sale": "1",             # never remove/alter a website sale price unless BillBook says so
+    "allow_edit_name": "0",
+    "allow_edit_sku": "0",
     "low_stock": "3",
     "big_price_change_pct": "30",
     "big_stock_change": "100",

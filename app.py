@@ -108,6 +108,9 @@ def _payload(after, live_item):
         p["regular_price"] = after["regular_price"]
     if "sale_price" in after:
         p["sale_price"] = after["sale_price"]
+    for k in ("name", "sku"):
+        if k in after:
+            p[k] = after[k]
     if "manage_stock" in after:
         p["manage_stock"] = after["manage_stock"] == "1"
     if "stock_quantity" in after and after["stock_quantity"] is not None:
@@ -128,6 +131,8 @@ def _check(after, live_item):
             ok = actual == (int(v) if v is not None else None)
         elif k == "manage_stock":
             ok = (actual == "1") == (v == "1")
+        elif k in ("name", "sku"):
+            ok = (actual or "").strip() == (v or "").strip()
         else:
             ok = importer._same(actual, v)
         if not ok:
@@ -203,7 +208,7 @@ def do_apply(job, changes, kind, source):
         if iid not in meta:
             continue
         _, lb = meta[iid]
-        before = {k: lb.get(k) for k in ("regular_price", "sale_price", "stock_quantity", "manage_stock")}
+        before = {k: lb.get(k) for k in ("regular_price", "sale_price", "stock_quantity", "manage_stock", "name", "sku")}
         la = live_after.get(iid)
         actual = {k: la.get(k) for k in before} if la else None
         if iid in write_errors:
@@ -348,12 +353,33 @@ def items():
 
 @app.post("/api/item/<int:item_id>")
 def inline_update(item_id):
-    """Quick edit from the inventory table: body {regular_price?, sale_price?, stock_quantity?}"""
+    """Quick edit from the inventory table: body {regular_price?, sale_price?, stock_quantity?, name?, sku?}"""
     data = request.get_json(force=True) or {}
     it = db.get_items([item_id]).get(item_id)
     if not it:
         return err("Item not in local cache — sync first.")
+    s = db.get_settings()
     after = {}
+    if "name" in data:
+        if s.get("allow_edit_name") != "1":
+            return err("Product name editing is turned off. Enable it in Settings → Editing.")
+        if it["parent_id"]:
+            return err("Variation names come from their attributes — edit the parent product name instead.")
+        name = str(data["name"]).strip()
+        if not name:
+            return err("Product name cannot be empty")
+        after["name"] = name
+    if "sku" in data:
+        if s.get("allow_edit_sku") != "1":
+            return err("SKU editing is turned off. Enable it in Settings → Editing.")
+        sku = str(data["sku"]).strip()
+        if sku:
+            clash = [i for i in db.all_items() if i["id"] != item_id and importer.sku_key(i["sku"]) == importer.sku_key(sku)]
+            if clash:
+                c = clash[0]
+                return err(f"SKU '{sku}' is already used by {c['name']}"
+                           + (f" — {c['variation_label']}" if c["variation_label"] else ""))
+        after["sku"] = sku
     for k in ("regular_price", "sale_price"):
         if k in data:
             v = str(data[k]).strip()
@@ -408,7 +434,13 @@ def import_preview():
     if not items:
         return err("No website products in the local cache. Click 'Sync from website' first.")
     try:
-        pv = importer.build_preview(up["headers"], up["rows"], data.get("mapping") or {}, items, db.get_settings())
+        mapping = dict(data.get("mapping") or {})
+        if data.get("apply_stock") is False:
+            mapping.pop("stock", None)
+        if data.get("apply_price") is False:
+            mapping.pop("selling_price", None)
+            mapping.pop("mrp", None)
+        pv = importer.build_preview(up["headers"], up["rows"], mapping, items, db.get_settings())
     except ValueError as e:
         return err(e)
     up["preview"] = pv
